@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>咖啡店营业额</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500&family=Noto+Serif+SC:wght@500&display=swap">
+<style>
+/* Layout: one narrow column, phone first — summary, three figures, daily bars, daily table */
+:root {
+  --bg: #f7f5f2;
+  --panel: #ffffff;
+  --fg: #2a2320;
+  --muted: #7a6e66;
+  --line: #e6e0da;
+  --accent: #8a5a3b;      /* roasted coffee brown */
+  --grid: #eee9e4;
+  --bad: #b3261e;
+  --font-body: "Noto Sans SC", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-num: "Noto Serif SC", "Songti SC", Georgia, serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1b1715; --panel: #241f1c; --fg: #f1ebe6; --muted: #a89c93;
+    --line: #382f2a; --accent: #d39a70; --grid: #2f2824; --bad: #f2b8b5; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1b1715; --panel: #241f1c; --fg: #f1ebe6; --muted: #a89c93;
+  --line: #382f2a; --accent: #d39a70; --grid: #2f2824; --bad: #f2b8b5; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 44rem; margin-inline: auto; padding: 24px 16px 40px; display: grid; gap: 16px; }
+h1 { font-family: var(--font-num); font-weight: 500; font-size: 1.75rem; margin: 0; text-wrap: balance; }
+.take { margin: 4px 0 0; color: var(--muted); }
+.take b { color: var(--fg); font-weight: 500; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); gap: 12px; }
+.tile, .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 4px; align-content: start; min-width: 0; }
+.label { font-size: 12px; color: var(--muted); }
+.num { font-family: var(--font-num); font-size: 1.6rem; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.num small { font-size: .55em; color: var(--muted); margin-right: .2em; }
+.card h2 { margin: 0; font-size: 1rem; font-weight: 500; }
+.note { margin: 0; font-size: 12px; color: var(--muted); }
+.chart { position: relative; min-height: 240px; }
+.chart svg { display: block; }
+.tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgb(0 0 0 / .12); padding: 4px 8px; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tip .day { color: var(--muted); }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 500; font-size: 12px; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); }
+td { padding: 6px 8px; border-bottom: 1px solid var(--line); }
+tr:last-child td { border-bottom: 0; }
+.r { text-align: right; }
+.error { color: var(--bad); }
+footer { font-size: 12px; color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) {
+  .bar { animation: grow .5s cubic-bezier(.2,.7,.2,1) both; transform-box: fill-box; transform-origin: bottom; }
+  @keyframes grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <h1>咖啡店营业额</h1>
+    <p class="take" id="takeaway">正在读取销售记录…</p>
+  </header>
+
+  <section class="tiles">
+    <div class="tile"><span class="label" id="total-label">总营业额</span><span class="num"><small>RM</small><span id="total">—</span></span></div>
+    <div class="tile"><span class="label" id="latest-label">最近一天</span><span class="num"><small>RM</small><span id="latest">—</span></span></div>
+    <div class="tile"><span class="label">每天平均</span><span class="num"><small>RM</small><span id="avg">—</span></span></div>
+  </section>
+
+  <section class="card">
+    <h2>每天卖了多少钱</h2>
+    <p class="note">单位：RM（马币）。点一下柱子看当天的金额和杯数。</p>
+    <div class="chart" id="chart"></div>
+  </section>
+
+  <section class="card">
+    <h2>每日明细</h2>
+    <p class="note">每一笔 = 数量 × 单价，按日期加总。最新的一天在最上面。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>日期</th><th class="r">杯数</th><th class="r">营业额 (RM)</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>数据来源：sales.csv（从 Google Sheet「sale record」的 Sale 页导出）。</footer>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script>
+(() => {
+  const money = d3.format(',.2f');
+  const short = v => (Math.round(v * 10) / 10).toLocaleString('en');
+  const md = day => { const [, m, d] = day.split('-'); return `${+m}/${+d}`; };
+  const mdLong = day => { const [, m, d] = day.split('-'); return `${+m}月${+d}日`; };
+  const $ = id => document.getElementById(id);
+  const chart = $('chart');
+  let daily = [];
+
+  function toDaily(sales) {
+    const byDay = {};
+    for (const r of sales) {
+      const day = String(r.timestamp).slice(0, 10);
+      const d = byDay[day] || (byDay[day] = { day, revenue: 0, cups: 0 });
+      d.revenue += Number(r.quantity) * Number(r.price);
+      d.cups += Number(r.quantity);
+    }
+    return Object.values(byDay).sort((a, b) => (a.day < b.day ? -1 : 1));
+  }
+
+  function fillSummary() {
+    const total = d3.sum(daily, d => d.revenue);
+    const last = daily[daily.length - 1];
+    const best = daily.reduce((m, d) => (d.revenue > m.revenue ? d : m), daily[0]);
+    $('total').textContent = money(total);
+    $('latest').textContent = money(last.revenue);
+    $('avg').textContent = money(total / daily.length);
+    $('total-label').textContent = `总营业额（${daily.length} 天）`;
+    $('latest-label').textContent = `最近一天（${mdLong(last.day)}）`;
+    const t = $('takeaway');
+    t.replaceChildren();
+    const b = s => { const el = document.createElement('b'); el.textContent = s; return el; };
+    t.append(`${mdLong(daily[0].day)}到${mdLong(last.day)}一共卖了 `, b('RM ' + money(total)),
+      `。卖得最多的一天是${mdLong(best.day)}，`, b('RM ' + money(best.revenue)), '。');
+  }
+
+  function fillTable() {
+    const tbody = $('rows');
+    tbody.replaceChildren();
+    daily.slice().reverse().forEach(r => {
+      const tr = document.createElement('tr');
+      [[mdLong(r.day), ''], [String(r.cups), 'r'], [money(r.revenue), 'r']].forEach(([txt, c]) => {
+        const td = document.createElement('td'); td.textContent = txt; if (c) td.className = c; tr.append(td);
+      });
+      tbody.append(tr);
+    });
+  }
+
+  function drawChart() {
+    chart.replaceChildren();
+    const rows = daily;
+    const W = Math.max(280, chart.clientWidth), H = 240;
+    const svg = d3.select(chart).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`);
+    const y = d3.scaleLinear([0, d3.max(rows, d => d.revenue) || 1], [0, 1]).nice();
+    const ticks = y.ticks(4);
+
+    const probe = svg.append('text').attr('font-size', 12);
+    let wide = 0;
+    ticks.forEach(t => { probe.text(d3.format(',')(t)); wide = Math.max(wide, probe.node().getComputedTextLength()); });
+    probe.remove();
+
+    const m = { top: 20, right: 4, bottom: 26, left: Math.ceil(wide) + 10 };
+    y.range([H - m.bottom, m.top]);
+    const x = d3.scaleBand(rows.map(d => d.day), [m.left, W - m.right]).padding(0.25);
+    const bw = x.bandwidth();
+    const every = x.step() < 34 ? 2 : 1;
+    const g = svg.append('g').attr('font-size', 12);
+
+    g.selectAll('line').data(ticks).join('line')
+      .attr('x1', m.left).attr('x2', W - m.right).attr('y1', d => y(d)).attr('y2', d => y(d))
+      .attr('stroke', d => (d === 0 ? 'var(--muted)' : 'var(--grid)'));
+    g.selectAll('text.yt').data(ticks).join('text').attr('class', 'yt')
+      .attr('x', m.left - 8).attr('y', d => y(d)).attr('dy', '0.32em').attr('text-anchor', 'end')
+      .attr('fill', 'var(--muted)').text(d => d3.format(',')(d));
+    g.selectAll('text.xt').data(rows.filter((d, i) => (rows.length - 1 - i) % every === 0)).join('text').attr('class', 'xt')
+      .attr('x', d => x(d.day) + bw / 2).attr('y', H - 8).attr('text-anchor', 'middle')
+      .attr('fill', 'var(--muted)').text(d => md(d.day));
+
+    const top = d => Math.min(y(d.revenue), y(0) - 2);
+    const bars = g.selectAll('rect.bar').data(rows).join('rect').attr('class', 'bar')
+      .attr('x', d => x(d.day)).attr('width', bw)
+      .attr('y', top).attr('height', d => y(0) - top(d))
+      .attr('rx', 4).attr('fill', 'var(--accent)');
+
+    if (bw >= 24) {
+      g.selectAll('text.vl').data(rows).join('text').attr('class', 'vl')
+        .attr('x', d => x(d.day) + bw / 2).attr('y', d => top(d) - 5).attr('text-anchor', 'middle')
+        .attr('fill', 'var(--fg)').style('font-variant-numeric', 'tabular-nums').text(d => short(d.revenue));
+    }
+
+    const tip = document.createElement('div');
+    tip.className = 'tip'; tip.hidden = true; chart.append(tip);
+    const show = (ev, d) => {
+      bars.attr('opacity', b => (b === d ? 1 : 0.45));
+      tip.replaceChildren();
+      const a = document.createElement('div'); a.className = 'day'; a.textContent = mdLong(d.day);
+      const b = document.createElement('div'); b.textContent = `RM ${money(d.revenue)} · ${d.cups} 杯`;
+      tip.append(a, b); tip.hidden = false;
+      const s = chart.clientWidth / W, tw = tip.offsetWidth;
+      tip.style.left = Math.max(0, Math.min(chart.clientWidth - tw, (x(d.day) + bw / 2) * s - tw / 2)) + 'px';
+      tip.style.top = Math.max(0, top(d) * s - tip.offsetHeight - 8) + 'px';
+    };
+    const hide = () => { bars.attr('opacity', 1); tip.hidden = true; };
+    g.selectAll('rect.hit').data(rows).join('rect').attr('class', 'hit')
+      .attr('x', d => x(d.day) - (x.step() - bw) / 2).attr('width', x.step())
+      .attr('y', m.top).attr('height', H - m.top - m.bottom).attr('fill', 'transparent')
+      .style('cursor', 'pointer').on('pointerenter click', show).on('pointerleave', hide);
+  }
+
+  d3.csv('sales.csv?v=' + Date.now()).then(sales => {
+    daily = toDaily(sales);
+    if (!daily.length) { $('takeaway').textContent = '销售记录里还没有数据。'; return; }
+    fillSummary(); fillTable(); drawChart();
+    let w = chart.clientWidth;
+    window.addEventListener('resize', () => { if (chart.clientWidth !== w) { w = chart.clientWidth; drawChart(); } });
+  }).catch(() => {
+    const t = $('takeaway'); t.className = 'take error';
+    t.textContent = '读取不到 sales.csv，请确认它和这个网页放在同一个文件夹里。';
+  });
+})();
+</script>
+</body>
+</html>
